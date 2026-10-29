@@ -1,4 +1,4 @@
-package main
+package cmd_rest
 
 import (
 	"backend-ai-supernote/internal/controller"
@@ -10,22 +10,24 @@ import (
 	"os"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/cors"
 	"github.com/joho/godotenv"
 )
 
-func main() {
+func Main() {
 	godotenv.Load()
 	app := fiber.New(fiber.Config{
 		BodyLimit: 10 * 1024 * 1024,
 	})
 
+	app.Use(cors.New())
 	app.Use(serverutils.ErrorHandlerMiddleware())
 
 	db := database.ConnectDB(os.Getenv("DB_CONNECTION_STRING"))
 
 	notebookRepository := repository.NewNotebookRepository(db)
 
-	notebookService := service.NewNotebookService(notebookRepository)
+	notebookService := service.NewNotebookService(notebookRepository, db)
 
 	notebookController := controller.NewNotebookController(notebookService)
 
