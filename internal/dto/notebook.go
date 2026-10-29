@@ -6,6 +6,14 @@ import (
 	"github.com/google/uuid"
 )
 
+type GetAllNotebookResponse struct {
+	Id        uuid.UUID  `json:"id"`
+	Name      string     `json:"name"`
+	ParentID  *uuid.UUID `json:"parent_id"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt *time.Time `json:"updated_at"`
+}
+
 type CreateNotebookRequest struct {
 	Name     string     `json:"name" validate:"required"`
 	ParentID *uuid.UUID `json:"parent_id"`
@@ -14,6 +22,11 @@ type CreateNotebookRequest struct {
 type UpdateNotebookRequest struct {
 	Id   uuid.UUID
 	Name string `json:"name" validate:"required"`
+}
+
+type MoveNotebookRequest struct {
+	Id       uuid.UUID
+	ParentId *uuid.UUID `json:"parent_id"`
 }
 
 type CreateNotebookResponse struct {
@@ -29,5 +42,9 @@ type ShowNotebookResponse struct {
 }
 
 type UpdateNotebookResponse struct {
+	Id uuid.UUID `json:"id"`
+}
+
+type MoveNotebookResponse struct {
 	Id uuid.UUID `json:"id"`
 }
