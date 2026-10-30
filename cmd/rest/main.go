@@ -6,6 +6,8 @@ import (
 	"backend-ai-supernote/internal/repository"
 	"backend-ai-supernote/internal/service"
 	"backend-ai-supernote/pkg/database"
+	"context"
+	"fmt"
 	"log"
 	"os"
 
@@ -39,6 +41,10 @@ func Main() {
 		pubSub,
 		"embed-note-content",
 	)
+	consumerService := service.NewConsumerService(
+		pubSub,
+		"embed-note-content",
+	)
 
 	notebookService := service.NewNotebookService(notebookRepository, noteRepository, db)
 	noteService := service.NewNoteService(noteRepository, publisherService)
@@ -49,6 +55,10 @@ func Main() {
 	api := app.Group("/api")
 	notebookController.RegisterRoutes(api)
 	noteController.RegisterRoutes(api)
-
+	err := consumerService.Consume(context.Background())
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("Server running")
 	log.Fatal(app.Listen(":3000"))
 }
