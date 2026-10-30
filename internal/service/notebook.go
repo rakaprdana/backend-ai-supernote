@@ -23,6 +23,7 @@ type INotebookService interface {
 
 type notebookService struct {
 	notebookRepository repository.INotebookRepository
+	noteRepository     repository.INoteRepository
 	db                 *pgxpool.Pool
 }
 
@@ -33,6 +34,7 @@ func (c *notebookService) GetAllNotebook(ctx context.Context) ([]*dto.GetAllNote
 		return nil, err
 	}
 
+	ids := make([]uuid.UUID, 0)
 	result := make([]*dto.GetAllNotebookResponse, 0)
 	for _, notebook := range notebooks {
 		res := dto.GetAllNotebookResponse{
@@ -41,9 +43,30 @@ func (c *notebookService) GetAllNotebook(ctx context.Context) ([]*dto.GetAllNote
 			ParentID:  notebook.ParentID,
 			CreatedAt: notebook.CreatedAt,
 			UpdatedAt: notebook.UpdatedAt,
+			Notes:     make([]*dto.GetAllNotebookResponseNote, 0),
 		}
 
 		result = append([]*dto.GetAllNotebookResponse{&res}, result...)
+		ids = append(ids, notebook.Id)
+	}
+
+	notes, err := c.noteRepository.GetByNotebookIds(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := 0; i < len(result); i++ {
+		for j := 0; j < len(notes); j++ {
+			if notes[j].NotebookId == result[i].Id {
+				result[i].Notes = append(result[i].Notes, &dto.GetAllNotebookResponseNote{
+					Id:        notes[j].Id,
+					Title:     notes[j].Title,
+					Content:   notes[j].Content,
+					CreatedAt: notes[j].CreatedAt,
+					UpdatedAt: notes[j].UpdatedAt,
+				})
+			}
+		}
 	}
 
 	return result, nil
@@ -86,11 +109,16 @@ func (c *notebookService) Delete(ctx context.Context, id uuid.UUID) error {
 	defer tx.Rollback(ctx)
 
 	notebookRepoTx := c.notebookRepository.UsingTx(ctx, tx)
+	noteRepoTx := c.noteRepository.UsingTx(ctx, tx)
 
 	if err := notebookRepoTx.Delete(ctx, id); err != nil {
 		return err
 	}
 	if err := notebookRepoTx.NullifyParentById(ctx, id); err != nil {
+		return err
+	}
+
+	if err := noteRepoTx.DeleteByNotebookId(ctx, id); err != nil {
 		return err
 	}
 
@@ -156,9 +184,14 @@ func (c *notebookService) Create(ctx context.Context, req *dto.CreateNotebookReq
 	}, nil
 }
 
-func NewNotebookService(notebookRepository repository.INotebookRepository, db *pgxpool.Pool) INotebookService {
+func NewNotebookService(
+	notebookRepository repository.INotebookRepository,
+	noteRepository repository.INoteRepository,
+	db *pgxpool.Pool,
+) INotebookService {
 	return &notebookService{
 		notebookRepository: notebookRepository,
+		noteRepository:     noteRepository,
 		db:                 db,
 	}
 }
