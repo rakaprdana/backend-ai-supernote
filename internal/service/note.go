@@ -15,10 +15,31 @@ type INoteService interface {
 	Show(ctx context.Context, id uuid.UUID) (*dto.ShowNoteResponse, error)
 	Update(ctx context.Context, req *dto.UpdateNoteRequest) (*dto.UpdateNoteResponse, error)
 	Delete(ctx context.Context, id uuid.UUID) error
+	MoveNote(ctx context.Context, req *dto.MoveNoteRequest) (*dto.MoveNoteResponse, error)
 }
 
 type noteService struct {
 	noteRepository repository.INoteRepository
+}
+
+// MoveNotebook implements [INoteService].
+func (n *noteService) MoveNote(ctx context.Context, req *dto.MoveNoteRequest) (*dto.MoveNoteResponse, error) {
+	note, err := n.noteRepository.GetByID(ctx, req.Id)
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now()
+	note.NotebookId = req.NotebookID
+	note.UpdatedAt = &now
+
+	if err = n.noteRepository.Update(ctx, note); err != nil {
+		return nil, err
+	}
+
+	return &dto.MoveNoteResponse{
+		Id: note.Id,
+	}, nil
 }
 
 // Delete implements [INoteService].

@@ -15,10 +15,35 @@ type INoteController interface {
 	Show(ctx fiber.Ctx) error
 	Update(ctx fiber.Ctx) error
 	Delete(ctx fiber.Ctx) error
+	MoveNote(ctx fiber.Ctx) error
 }
 
 type noteController struct {
 	service service.INoteService
+}
+
+// MoveNote implements [INoteController].
+func (c *noteController) MoveNote(ctx fiber.Ctx) error {
+	idParams := ctx.Params("id")
+	id, _ := uuid.Parse(idParams)
+
+	var req dto.MoveNoteRequest
+	if err := ctx.Bind().Body(&req); err != nil {
+		return err
+	}
+
+	req.Id = id
+	err := serverutils.ValidateRequest(req)
+	if err != nil {
+		return err
+	}
+
+	res, err := c.service.MoveNote(ctx.Context(), &req)
+	if err != nil {
+		return err
+	}
+
+	return ctx.JSON(serverutils.SuccessResponse("Success move note", res))
 }
 
 // Delete implements [INoteController].
@@ -99,6 +124,7 @@ func (c *noteController) RegisterRoutes(r fiber.Router) {
 	h.Get(":id", c.Show)
 	h.Put(":id", c.Update)
 	h.Delete(":id", c.Delete)
+	h.Put(":id/move", c.MoveNote)
 
 }
 
