@@ -18,6 +18,11 @@ type UpdateNoteRequest struct {
 	NotebookId uuid.UUID `json:"notebook_id" validate:"required"`
 }
 
+type MoveNoteRequest struct {
+	Id         uuid.UUID
+	NotebookID uuid.UUID `json:"notebook_id" validate:"required"`
+}
+
 type CreateNoteResponse struct {
 	Id uuid.UUID `json:"id"`
 }
@@ -31,5 +36,9 @@ type ShowNoteResponse struct {
 	UpdatedAt  *time.Time `json:"updated_at"`
 }
 type UpdateNoteResponse struct {
+	Id uuid.UUID `json:"id"`
+}
+
+type MoveNoteResponse struct {
 	Id uuid.UUID `json:"id"`
 }
