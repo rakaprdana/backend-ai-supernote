@@ -3,6 +3,7 @@ module backend-ai-supernote
 go 1.27.3
 
 require (
+	github.com/ThreeDotsLabs/watermill v1.5.3 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.8 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
@@ -18,10 +19,13 @@ require (
 	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/klauspost/compress v1.20.3 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
+	github.com/lithammer/shortuuid/v3 v3.0.7 // indirect
 	github.com/mattn/go-colorable v0.1.16 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/molecule-man/go-brrr v1.3.0 // indirect
+	github.com/oklog/ulid v1.3.1 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
+	github.com/pkg/errors v0.9.1 // indirect
 	github.com/tinylib/msgp v1.6.5 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.75.0 // indirect

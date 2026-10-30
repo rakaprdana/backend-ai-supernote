@@ -5,6 +5,7 @@ import (
 	"backend-ai-supernote/internal/entity"
 	"backend-ai-supernote/internal/repository"
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -19,7 +20,8 @@ type INoteService interface {
 }
 
 type noteService struct {
-	noteRepository repository.INoteRepository
+	noteRepository   repository.INoteRepository
+	publisherService IPublisherService
 }
 
 // MoveNotebook implements [INoteService].
@@ -111,13 +113,29 @@ func (n *noteService) Create(ctx context.Context, req *dto.CreateNoteRequest) (*
 		return nil, err
 	}
 
+	message := dto.PublisherEmbedNoteMessage{
+		NoteId: note.Id,
+	}
+	msgPayloadJson, err := json.Marshal(message)
+	if err != nil {
+		return nil, err
+	}
+
+	if err = n.publisherService.Publish(ctx, msgPayloadJson); err != nil {
+		return nil, err
+	}
+
 	return &dto.CreateNoteResponse{
 		Id: note.Id,
 	}, nil
 }
 
-func NewNoteService(noteRepository repository.INoteRepository) INoteService {
+func NewNoteService(
+	noteRepository repository.INoteRepository,
+	publihserService IPublisherService,
+) INoteService {
 	return &noteService{
-		noteRepository: noteRepository,
+		noteRepository:   noteRepository,
+		publisherService: publihserService,
 	}
 }
