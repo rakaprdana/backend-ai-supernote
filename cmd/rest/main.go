@@ -31,6 +31,7 @@ func Main() {
 
 	notebookRepository := repository.NewNotebookRepository(db)
 	noteRepository := repository.NewNoteRepository(db)
+	noteEmbeddingRepository := repository.NewNoteEmbeddingRepository(db)
 
 	watermillLogger := watermill.NewStdLogger(false, false)
 	pubSub := gochannel.NewGoChannel(
@@ -43,6 +44,7 @@ func Main() {
 	)
 	consumerService := service.NewConsumerService(
 		noteRepository,
+		noteEmbeddingRepository,
 		pubSub,
 		os.Getenv("EMBED_NOTE_CONTENT_TOPIC_NAME"),
 	)
