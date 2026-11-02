@@ -2,9 +2,12 @@ package service
 
 import (
 	"backend-ai-supernote/internal/dto"
+	"backend-ai-supernote/internal/repository"
+	"backend-ai-supernote/pkg/database/embedding"
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/ThreeDotsLabs/watermill/pubsub/gochannel"
@@ -16,8 +19,9 @@ type IConsumerService interface {
 }
 
 type consumerService struct {
-	pubSub    *gochannel.GoChannel
-	topicName string
+	noteRepository repository.INoteRepository
+	pubSub         *gochannel.GoChannel
+	topicName      string
 }
 
 // Consume implements [IConsumerService].
@@ -37,10 +41,15 @@ func (c *consumerService) Consume(ctx context.Context) error {
 	return nil
 }
 
-func NewConsumerService(pubSub *gochannel.GoChannel, topicName string) IConsumerService {
+func NewConsumerService(
+	noteRepository repository.INoteRepository,
+	pubSub *gochannel.GoChannel,
+	topicName string,
+) IConsumerService {
 	return &consumerService{
-		pubSub:    pubSub,
-		topicName: topicName,
+		noteRepository: noteRepository,
+		pubSub:         pubSub,
+		topicName:      topicName,
 	}
 }
 
@@ -61,6 +70,16 @@ func (c *consumerService) processMessage(
 		panic(err)
 	}
 
-	fmt.Println(payload.NoteId)
+	note, err := c.noteRepository.GetByID(ctx, payload.NoteId)
+	if err != nil {
+		panic(err)
+	}
+
+	result, err := embedding.GetGeminiEmbedding(os.Getenv("GEMINI_API_KEY"), note.Content)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println(result.Embedding.Values)
 	msg.Ack()
 }

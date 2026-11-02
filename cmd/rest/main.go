@@ -39,11 +39,12 @@ func Main() {
 	)
 	publisherService := service.NewPublisherService(
 		pubSub,
-		"embed-note-content",
+		os.Getenv("EMBED_NOTE_CONTENT_TOPIC_NAME"),
 	)
 	consumerService := service.NewConsumerService(
+		noteRepository,
 		pubSub,
-		"embed-note-content",
+		os.Getenv("EMBED_NOTE_CONTENT_TOPIC_NAME"),
 	)
 
 	notebookService := service.NewNotebookService(notebookRepository, noteRepository, db)
