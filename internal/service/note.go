@@ -4,8 +4,10 @@ import (
 	"backend-ai-supernote/internal/dto"
 	"backend-ai-supernote/internal/entity"
 	"backend-ai-supernote/internal/repository"
+	"backend-ai-supernote/pkg/embedding"
 	"context"
 	"encoding/json"
+	"os"
 	"time"
 
 	"github.com/google/uuid"
@@ -17,11 +19,57 @@ type INoteService interface {
 	Update(ctx context.Context, req *dto.UpdateNoteRequest) (*dto.UpdateNoteResponse, error)
 	Delete(ctx context.Context, id uuid.UUID) error
 	MoveNote(ctx context.Context, req *dto.MoveNoteRequest) (*dto.MoveNoteResponse, error)
+	SemanticSearch(ctx context.Context, search string) ([]*dto.SemanticSearchResponse, error)
 }
 
 type noteService struct {
-	noteRepository   repository.INoteRepository
-	publisherService IPublisherService
+	noteEmbeddingRepo repository.INoteEmbeddingRepository
+	noteRepository    repository.INoteRepository
+	publisherService  IPublisherService
+}
+
+// SemanticSearch implements [INoteService].
+func (n *noteService) SemanticSearch(ctx context.Context, search string) ([]*dto.SemanticSearchResponse, error) {
+	embeddingRes, err := embedding.GetGeminiEmbedding(
+		os.Getenv("GEMINI_API_KEY"),
+		search,
+		"RETRIEVAL_QUERY",
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	noteEmbeddings, err := n.noteEmbeddingRepo.SemanticSearch(ctx, embeddingRes.Embedding.Values)
+	if err != nil {
+		return nil, err
+	}
+
+	ids := make([]uuid.UUID, 0)
+	for _, noteEmbedding := range noteEmbeddings {
+		ids = append(ids, noteEmbedding.NoteId)
+	}
+
+	notes, err := n.noteRepository.GetByIds(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+
+	res := make([]*dto.SemanticSearchResponse, 0)
+	for _, noteEmbedding := range noteEmbeddings {
+		for _, note := range notes {
+			if noteEmbedding.NoteId == note.Id {
+				res = append(res, &dto.SemanticSearchResponse{
+					Id:         note.Id,
+					Title:      note.Title,
+					Content:    note.Content,
+					NotebookId: note.NotebookId,
+					CreatedAt:  note.CreatedAt,
+					UpdatedAt:  note.UpdatedAt,
+				})
+			}
+		}
+	}
+	return res, nil
 }
 
 // MoveNotebook implements [INoteService].
@@ -75,6 +123,19 @@ func (n *noteService) Update(ctx context.Context, req *dto.UpdateNoteRequest) (*
 	}
 	res := dto.UpdateNoteResponse{
 		Id: note.Id,
+	}
+
+	payload := dto.PublisherEmbedNoteMessage{
+		NoteId: note.Id,
+	}
+	payloadJson, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	err = n.publisherService.Publish(ctx, payloadJson)
+	if err != nil {
+		return nil, err
 	}
 
 	return &res, nil
@@ -132,10 +193,12 @@ func (n *noteService) Create(ctx context.Context, req *dto.CreateNoteRequest) (*
 
 func NewNoteService(
 	noteRepository repository.INoteRepository,
+	noteEmbeddingRepo repository.INoteEmbeddingRepository,
 	publihserService IPublisherService,
 ) INoteService {
 	return &noteService{
-		noteRepository:   noteRepository,
-		publisherService: publihserService,
+		noteRepository:    noteRepository,
+		noteEmbeddingRepo: noteEmbeddingRepo,
+		publisherService:  publihserService,
 	}
 }

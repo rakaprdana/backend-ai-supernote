@@ -48,10 +48,11 @@ func Main() {
 		noteEmbeddingRepository,
 		pubSub,
 		os.Getenv("EMBED_NOTE_CONTENT_TOPIC_NAME"),
+		db,
 	)
 
 	notebookService := service.NewNotebookService(notebookRepository, noteRepository, db)
-	noteService := service.NewNoteService(noteRepository, publisherService)
+	noteService := service.NewNoteService(noteRepository, noteEmbeddingRepository, publisherService)
 
 	notebookController := controller.NewNotebookController(notebookService)
 	noteController := controller.NewNoteController(noteService)

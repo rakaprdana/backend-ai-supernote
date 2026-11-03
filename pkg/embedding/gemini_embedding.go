@@ -12,6 +12,7 @@ import (
 func GetGeminiEmbedding(
 	apiKey string,
 	text string,
+	taskType string,
 ) (*dto.EmbbedingResponse, error) {
 	gemeniReq := dto.EmbeddingRequest{
 		Model: "models/gemini-embedding-2",
@@ -22,7 +23,7 @@ func GetGeminiEmbedding(
 				},
 			},
 		},
-		TaskType: "RETRIEVAL_DOCUMENT",
+		TaskType: taskType,
 	}
 
 	gemeniReqJson, err := json.Marshal(gemeniReq)

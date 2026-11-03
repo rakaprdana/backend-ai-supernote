@@ -15,6 +15,7 @@ import (
 	"github.com/ThreeDotsLabs/watermill/pubsub/gochannel"
 	"github.com/gofiber/fiber/v3/log"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type IConsumerService interface {
@@ -27,6 +28,7 @@ type consumerService struct {
 	noteEmbeddingRepo  repository.INoteEmbeddingRepository
 	pubSub             *gochannel.GoChannel
 	topicName          string
+	db                 *pgxpool.Pool
 }
 
 // Consume implements [IConsumerService].
@@ -52,6 +54,7 @@ func NewConsumerService(
 	noteEmbeddingRepo repository.INoteEmbeddingRepository,
 	pubSub *gochannel.GoChannel,
 	topicName string,
+	db *pgxpool.Pool,
 ) IConsumerService {
 	return &consumerService{
 		notebookRepository: notebookRepository,
@@ -59,6 +62,7 @@ func NewConsumerService(
 		noteEmbeddingRepo:  noteEmbeddingRepo,
 		pubSub:             pubSub,
 		topicName:          topicName,
+		db:                 db,
 	}
 }
 
@@ -109,7 +113,11 @@ func (c *consumerService) processMessage(
 		noteUpdated,
 	)
 
-	result, err := embedding.GetGeminiEmbedding(os.Getenv("GEMINI_API_KEY"), content)
+	result, err := embedding.GetGeminiEmbedding(
+		os.Getenv("GEMINI_API_KEY"),
+		content,
+		"RETRIEVAL_DOCUMENT",
+	)
 	if err != nil {
 		panic(err)
 	}
@@ -122,11 +130,29 @@ func (c *consumerService) processMessage(
 		CreatedAt:      time.Now(),
 	}
 
-	err = c.noteEmbeddingRepo.Create(ctx, &noteEmbedding)
+	tx, err := c.db.Begin(ctx)
 	if err != nil {
 		panic(err)
 	}
 
-	fmt.Println(result.Embedding.Values)
+	defer tx.Rollback(ctx)
+
+	noteEmbeddingRepository := c.noteEmbeddingRepo.UsingTx(ctx, tx)
+
+	err = noteEmbeddingRepository.DeleteByNoteId(ctx, note.Id)
+	if err != nil {
+		panic(err)
+	}
+
+	err = noteEmbeddingRepository.Create(ctx, &noteEmbedding)
+	if err != nil {
+		panic(err)
+	}
+
+	err = tx.Commit(ctx)
+	if err != nil {
+		panic(err)
+	}
+
 	msg.Ack()
 }
