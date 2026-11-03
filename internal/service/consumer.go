@@ -22,10 +22,11 @@ type IConsumerService interface {
 }
 
 type consumerService struct {
-	noteRepository    repository.INoteRepository
-	noteEmbeddingRepo repository.INoteEmbeddingRepository
-	pubSub            *gochannel.GoChannel
-	topicName         string
+	notebookRepository repository.INotebookRepository
+	noteRepository     repository.INoteRepository
+	noteEmbeddingRepo  repository.INoteEmbeddingRepository
+	pubSub             *gochannel.GoChannel
+	topicName          string
 }
 
 // Consume implements [IConsumerService].
@@ -46,16 +47,18 @@ func (c *consumerService) Consume(ctx context.Context) error {
 }
 
 func NewConsumerService(
+	notebookRepository repository.INotebookRepository,
 	noteRepository repository.INoteRepository,
 	noteEmbeddingRepo repository.INoteEmbeddingRepository,
 	pubSub *gochannel.GoChannel,
 	topicName string,
 ) IConsumerService {
 	return &consumerService{
-		noteRepository:    noteRepository,
-		noteEmbeddingRepo: noteEmbeddingRepo,
-		pubSub:            pubSub,
-		topicName:         topicName,
+		notebookRepository: notebookRepository,
+		noteRepository:     noteRepository,
+		noteEmbeddingRepo:  noteEmbeddingRepo,
+		pubSub:             pubSub,
+		topicName:          topicName,
 	}
 }
 
@@ -81,14 +84,39 @@ func (c *consumerService) processMessage(
 		panic(err)
 	}
 
-	result, err := embedding.GetGeminiEmbedding(os.Getenv("GEMINI_API_KEY"), note.Content)
+	notebook, err := c.notebookRepository.GetByID(ctx, note.NotebookId)
+	if err != nil {
+		panic(err)
+	}
+
+	noteUpdated := "-"
+	if note.UpdatedAt != nil {
+		noteUpdated = note.UpdatedAt.Format(time.RFC3339)
+	}
+	content := fmt.Sprintf(`
+	Note Title : %s
+	Notebook Title: %s
+
+	%s
+
+	Created At: %s
+	Updated At: %s
+	`,
+		note.Title,
+		notebook.Name,
+		note.CreatedAt.Format(time.RFC3339),
+		note.Content,
+		noteUpdated,
+	)
+
+	result, err := embedding.GetGeminiEmbedding(os.Getenv("GEMINI_API_KEY"), content)
 	if err != nil {
 		panic(err)
 	}
 
 	noteEmbedding := entity.NoteEmbedding{
 		Id:             uuid.New(),
-		Document:       note.Content,
+		Document:       content,
 		EmbeddingValue: result.Embedding.Values,
 		NoteId:         note.Id,
 		CreatedAt:      time.Now(),
