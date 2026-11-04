@@ -4,16 +4,75 @@ import (
 	entity "backend-ai-supernote/internal/entity/chatbot"
 	"backend-ai-supernote/pkg/database"
 	"context"
+
+	"github.com/google/uuid"
 )
 
 type IChatSessionRepository interface {
 	UsingTx(ctx context.Context, tx database.DatabaseQueryer) IChatSessionRepository
 	Create(ctx context.Context, chatSession *entity.ChatSession) error
 	GetAll(ctx context.Context) ([]*entity.ChatSession, error)
+	GetById(ctx context.Context, id uuid.UUID) (*entity.ChatSession, error)
+	Update(ctx context.Context, chatSession *entity.ChatSession) error
 }
 
 type chatSessionRepository struct {
 	db database.DatabaseQueryer
+}
+
+// Update implements [IChatSessionRepository].
+func (c *chatSessionRepository) Update(ctx context.Context, chatSession *entity.ChatSession) error {
+	_, err := c.db.Exec(
+		ctx,
+		`
+		UPDATE chat_session SET
+		title = $1,
+		updated_at = $2
+		WHERE id = $3
+		`,
+		chatSession.Title,
+		chatSession.UpdatedAt,
+		chatSession.Id,
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// GetById implements [IChatSessionRepository].
+func (c *chatSessionRepository) GetById(ctx context.Context, id uuid.UUID) (*entity.ChatSession, error) {
+	row := c.db.QueryRow(
+		ctx,
+		`SELECT 
+		id,
+		title,
+		created_at,
+		updated_at,
+		deleted_at,
+		is_deleted
+		FROM chat_session 
+		WHERE id = $1 
+		AND is_deleted=false 
+		`,
+		id,
+	)
+
+	var result entity.ChatSession
+	err := row.Scan(
+		&result.Id,
+		&result.Title,
+		&result.CreatedAt,
+		&result.UpdatedAt,
+		&result.DeletedAt,
+		&result.IsDeleted,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
 }
 
 // GetAll implements [IChatSessionRepository].
