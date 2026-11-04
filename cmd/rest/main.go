@@ -4,6 +4,7 @@ import (
 	"backend-ai-supernote/internal/controller"
 	"backend-ai-supernote/internal/pkg/serverutils"
 	"backend-ai-supernote/internal/repository"
+	chatbotRepo "backend-ai-supernote/internal/repository/chatbot"
 	"backend-ai-supernote/internal/service"
 	"backend-ai-supernote/pkg/database"
 	"context"
@@ -32,6 +33,9 @@ func Main() {
 	notebookRepository := repository.NewNotebookRepository(db)
 	noteRepository := repository.NewNoteRepository(db)
 	noteEmbeddingRepository := repository.NewNoteEmbeddingRepository(db)
+	chatSessionRepository := chatbotRepo.NewChatSessionRepository(db)
+	chatMessageRepository := chatbotRepo.NewChatMessageRepository(db)
+	chatMessagRawRepository := chatbotRepo.NewChatMessageRawRepository(db)
 
 	watermillLogger := watermill.NewStdLogger(false, false)
 	pubSub := gochannel.NewGoChannel(
@@ -65,13 +69,22 @@ func Main() {
 		publisherService,
 		db,
 	)
+	chatbotService := service.NewChatbotService(
+		db,
+		chatSessionRepository,
+		chatMessageRepository,
+		chatMessagRawRepository,
+	)
 
 	notebookController := controller.NewNotebookController(notebookService)
 	noteController := controller.NewNoteController(noteService)
+	chatbotController := controller.NewChatbotController(chatbotService)
 
 	api := app.Group("/api")
 	notebookController.RegisterRoutes(api)
 	noteController.RegisterRoutes(api)
+	chatbotController.RegisterRoutes(api)
+
 	err := consumerService.Consume(context.Background())
 	if err != nil {
 		panic(err)
