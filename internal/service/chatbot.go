@@ -14,6 +14,7 @@ import (
 
 type IChatbotService interface {
 	CreateSession(ctx context.Context) (*dto.CreateSessionResponse, error)
+	GetAllSessions(ctx context.Context) ([]*dto.GetAllSessionsResponse, error)
 }
 
 type chatbotService struct {
@@ -21,6 +22,27 @@ type chatbotService struct {
 	chatSessionRepo    repository.IChatSessionRepository
 	chatMessageRepo    repository.IChatMessageRepository
 	chatMessageRawRepo repository.IChatMessageRawRepository
+}
+
+// GetAllSessions implements [IChatbotService].
+func (c *chatbotService) GetAllSessions(ctx context.Context) ([]*dto.GetAllSessionsResponse, error) {
+	chatSessions, err := c.chatSessionRepo.GetAll(ctx)
+
+	if err != nil {
+		return nil, err
+	}
+
+	res := make([]*dto.GetAllSessionsResponse, 0)
+	for _, chatSession := range chatSessions {
+		res = append(res, &dto.GetAllSessionsResponse{
+			Id:        chatSession.Id,
+			Title:     chatSession.Title,
+			CreatedAt: chatSession.CreatedAt,
+			UpdatedAt: &chatSession.UpdatedAt,
+		})
+	}
+
+	return res, nil
 }
 
 func (c *chatbotService) CreateSession(ctx context.Context) (*dto.CreateSessionResponse, error) {
