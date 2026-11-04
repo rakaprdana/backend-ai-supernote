@@ -5,6 +5,7 @@ import (
 	"backend-ai-supernote/internal/entity"
 	"backend-ai-supernote/internal/repository"
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -24,6 +25,8 @@ type INotebookService interface {
 type notebookService struct {
 	notebookRepository repository.INotebookRepository
 	noteRepository     repository.INoteRepository
+	noteEmbeddingRepo  repository.INoteEmbeddingRepository
+	publisherService   IPublisherService
 	db                 *pgxpool.Pool
 }
 
@@ -110,11 +113,16 @@ func (c *notebookService) Delete(ctx context.Context, id uuid.UUID) error {
 
 	notebookRepoTx := c.notebookRepository.UsingTx(ctx, tx)
 	noteRepoTx := c.noteRepository.UsingTx(ctx, tx)
+	noteEmbeddingRepoTx := c.noteEmbeddingRepo.UsingTx(ctx, tx)
 
 	if err := notebookRepoTx.Delete(ctx, id); err != nil {
 		return err
 	}
 	if err := notebookRepoTx.NullifyParentById(ctx, id); err != nil {
+		return err
+	}
+
+	if err := noteEmbeddingRepoTx.DeleteByNotebookId(ctx, id); err != nil {
 		return err
 	}
 
@@ -141,6 +149,30 @@ func (c *notebookService) Update(ctx context.Context, req *dto.UpdateNotebookReq
 	if err := c.notebookRepository.Update(ctx, notebook); err != nil {
 		return nil, err
 	}
+
+	notes, err := c.noteRepository.GetByNotebookIds(ctx, []uuid.UUID{notebook.Id})
+	if err != nil {
+		return nil, err
+	}
+
+	for _, note := range notes {
+		msg := dto.PublisherEmbedNoteMessage{
+			NoteId: note.Id,
+		}
+		msgJson, err := json.Marshal(msg)
+		if err != nil {
+			return nil, err
+		}
+
+		err = c.publisherService.Publish(
+			ctx,
+			msgJson,
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	res := dto.UpdateNotebookResponse{
 		Id: notebook.Id,
 	}
@@ -187,11 +219,15 @@ func (c *notebookService) Create(ctx context.Context, req *dto.CreateNotebookReq
 func NewNotebookService(
 	notebookRepository repository.INotebookRepository,
 	noteRepository repository.INoteRepository,
+	noteEmbeddingRepo repository.INoteEmbeddingRepository,
+	publisherService IPublisherService,
 	db *pgxpool.Pool,
 ) INotebookService {
 	return &notebookService{
 		notebookRepository: notebookRepository,
 		noteRepository:     noteRepository,
+		noteEmbeddingRepo:  noteEmbeddingRepo,
+		publisherService:   publisherService,
 		db:                 db,
 	}
 }

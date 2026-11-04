@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type INoteService interface {
@@ -26,6 +27,7 @@ type noteService struct {
 	noteEmbeddingRepo repository.INoteEmbeddingRepository
 	noteRepository    repository.INoteRepository
 	publisherService  IPublisherService
+	db                *pgxpool.Pool
 }
 
 // SemanticSearch implements [INoteService].
@@ -87,6 +89,19 @@ func (n *noteService) MoveNote(ctx context.Context, req *dto.MoveNoteRequest) (*
 		return nil, err
 	}
 
+	payload := dto.PublisherEmbedNoteMessage{
+		NoteId: note.Id,
+	}
+	payloadJson, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	err = n.publisherService.Publish(ctx, payloadJson)
+	if err != nil {
+		return nil, err
+	}
+
 	return &dto.MoveNoteResponse{
 		Id: note.Id,
 	}, nil
@@ -98,7 +113,25 @@ func (n *noteService) Delete(ctx context.Context, id uuid.UUID) error {
 	if err != nil {
 		return err
 	}
-	if err := n.noteRepository.Delete(ctx, id); err != nil {
+	tx, err := n.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	noteRepositoryTx := n.noteRepository.UsingTx(ctx, tx)
+	noteEmbeddingRepositoryTx := n.noteEmbeddingRepo.UsingTx(ctx, tx)
+
+	if err := noteRepositoryTx.Delete(ctx, id); err != nil {
+		return err
+	}
+
+	err = noteEmbeddingRepositoryTx.DeleteByNoteId(ctx, id)
+	if err != nil {
+		return err
+	}
+	err = tx.Commit(ctx)
+	if err != nil {
 		return err
 	}
 
@@ -195,10 +228,12 @@ func NewNoteService(
 	noteRepository repository.INoteRepository,
 	noteEmbeddingRepo repository.INoteEmbeddingRepository,
 	publihserService IPublisherService,
+	db *pgxpool.Pool,
 ) INoteService {
 	return &noteService{
 		noteRepository:    noteRepository,
 		noteEmbeddingRepo: noteEmbeddingRepo,
 		publisherService:  publihserService,
+		db:                db,
 	}
 }
