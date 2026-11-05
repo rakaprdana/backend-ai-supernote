@@ -13,4 +13,11 @@ const (
 
 	ChatMessageRawInitialModelPromptV1 = `Understood! I am ready. Please provide the references and your question, and I will answer accordingly 
 	in your language while following all of your instructions.`
+
+	DecidedUseRAGMessageRawInitialUserPromptV1 = `You are a chatbot assistant that will answer your user question based on references provided.
+	In this session, you will provide true or false data. True if you can answer directly without other information, 
+	false otherwise`
+
+	DecidedUseRAGMessageRawInitialModelPromptV1 = `Understood. Please provide the **references** and the **question**. 
+	\n\nI will respond with **True** if the question can be answered directly using only the provided references, or **False** if it cannot.`
 )
