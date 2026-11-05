@@ -4,6 +4,7 @@ import (
 	entity "backend-ai-supernote/internal/entity/chatbot"
 	"backend-ai-supernote/pkg/database"
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -14,10 +15,31 @@ type IChatSessionRepository interface {
 	GetAll(ctx context.Context) ([]*entity.ChatSession, error)
 	GetById(ctx context.Context, id uuid.UUID) (*entity.ChatSession, error)
 	Update(ctx context.Context, chatSession *entity.ChatSession) error
+	Delete(ctx context.Context, id uuid.UUID) error
 }
 
 type chatSessionRepository struct {
 	db database.DatabaseQueryer
+}
+
+// Delete implements [IChatSessionRepository].
+func (c *chatSessionRepository) Delete(ctx context.Context, id uuid.UUID) error {
+	_, err := c.db.Exec(
+		ctx,
+		`
+		UPDATE chat_session SET
+		deleted_at = $1,
+		is_deleted = true
+		WHERE id = $2
+		`,
+		time.Now(),
+		id,
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // Update implements [IChatSessionRepository].

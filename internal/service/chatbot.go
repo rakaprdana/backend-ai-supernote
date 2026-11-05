@@ -4,8 +4,14 @@ import (
 	"backend-ai-supernote/internal/constant"
 	"backend-ai-supernote/internal/dto"
 	entity "backend-ai-supernote/internal/entity/chatbot"
+	repoNote "backend-ai-supernote/internal/repository"
 	repository "backend-ai-supernote/internal/repository/chatbot"
+	"backend-ai-supernote/pkg/chatbot"
+	"backend-ai-supernote/pkg/embedding"
 	"context"
+	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -17,6 +23,7 @@ type IChatbotService interface {
 	GetAllSessions(ctx context.Context) ([]*dto.GetAllSessionsResponse, error)
 	GetChatHistory(ctx context.Context, sessionId uuid.UUID) ([]*dto.GetChatHistoryResponse, error)
 	SendChat(ctx context.Context, req *dto.SendChatRequest) (*dto.SendChatResponse, error)
+	DeleteSession(ctx context.Context, req *dto.DeleteSessionRequest) error
 }
 
 type chatbotService struct {
@@ -24,6 +31,46 @@ type chatbotService struct {
 	chatSessionRepo    repository.IChatSessionRepository
 	chatMessageRepo    repository.IChatMessageRepository
 	chatMessageRawRepo repository.IChatMessageRawRepository
+	noteEmbeddingRepo  repoNote.INoteEmbeddingRepository
+}
+
+// DeleteSession implements [IChatbotService].
+func (c *chatbotService) DeleteSession(ctx context.Context, req *dto.DeleteSessionRequest) error {
+	_, err := c.chatSessionRepo.GetById(ctx, req.ChatSessionId)
+	if err != nil {
+		return err
+	}
+	tx, err := c.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	chatSessionRepoTx := c.chatSessionRepo.UsingTx(ctx, tx)
+	chatMessageRepoTx := c.chatMessageRepo.UsingTx(ctx, tx)
+	chatMessageRawRepoTx := c.chatMessageRawRepo.UsingTx(ctx, tx)
+
+	err = chatSessionRepoTx.Delete(ctx, req.ChatSessionId)
+	if err != nil {
+		return err
+	}
+
+	err = chatMessageRepoTx.DeleteByChatSessionId(ctx, req.ChatSessionId)
+	if err != nil {
+		return err
+	}
+
+	err = chatMessageRawRepoTx.DeleteByChatSessionId(ctx, req.ChatSessionId)
+	if err != nil {
+		return err
+	}
+
+	err = tx.Commit(ctx)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // SendChat implements [IChatbotService].
@@ -37,6 +84,7 @@ func (c *chatbotService) SendChat(ctx context.Context, req *dto.SendChatRequest)
 	chatSessionRepoTx := c.chatSessionRepo.UsingTx(ctx, tx)
 	chatMessageRepoTx := c.chatMessageRepo.UsingTx(ctx, tx)
 	chatMessageRawRepoTx := c.chatMessageRawRepo.UsingTx(ctx, tx)
+	noteEmbeddingRepoTx := c.noteEmbeddingRepo.UsingTx(ctx, tx)
 
 	chatSession, err := chatSessionRepoTx.GetById(ctx, req.ChatSessionId)
 	if err != nil {
@@ -59,17 +107,94 @@ func (c *chatbotService) SendChat(ctx context.Context, req *dto.SendChatRequest)
 		CreatedAt:     now,
 	}
 
+	embeddingRes, err := embedding.GetGeminiEmbedding(
+		os.Getenv("GEMINI_API_KEY"),
+		req.Chat,
+		"RETRIEVAL_QUERY",
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	decidedeUseRAGChatHistories := make([]*chatbot.ChatHistory, 0)
+	for i, rawChat := range existingRawChats {
+		if i == 0 {
+			decidedeUseRAGChatHistories = append(decidedeUseRAGChatHistories, &chatbot.ChatHistory{
+				Chat: constant.DecidedUseRAGMessageRawInitialUserPromptV1,
+				Role: constant.ChatMessageRoleUser,
+			})
+			continue
+		} else if i == 1 {
+			decidedeUseRAGChatHistories = append(decidedeUseRAGChatHistories, &chatbot.ChatHistory{
+				Chat: constant.DecidedUseRAGMessageRawInitialModelPromptV1,
+				Role: constant.ChatMessageRoleUser,
+			})
+			continue
+		}
+
+		decidedeUseRAGChatHistories = append(decidedeUseRAGChatHistories, &chatbot.ChatHistory{
+			Chat: rawChat.Chat,
+			Role: rawChat.Role,
+		})
+	}
+	useRag, err := chatbot.DecideToUseRAGE(
+		ctx,
+		os.Getenv("GEMINI_API_KEY"),
+		decidedeUseRAGChatHistories,
+	)
+	if err != nil {
+		return nil, err
+	}
+	strBuilder := strings.Builder{}
+
+	if useRag {
+		noteEmbeddings, err := noteEmbeddingRepoTx.SearchSimilarity(ctx, embeddingRes.Embedding.Values)
+		if err != nil {
+			return nil, err
+		}
+
+		for i, noteEmbedding := range noteEmbeddings {
+			strBuilder.WriteString(fmt.Sprintf("Reference: &d\n", i+1))
+			strBuilder.WriteString(noteEmbedding.Document)
+			strBuilder.WriteString("\n\n")
+		}
+	}
+
+	strBuilder.WriteString("User next question: ")
+	strBuilder.WriteString(req.Chat)
+	strBuilder.WriteString("\n\n")
+	strBuilder.WriteString("Your answer? ")
+
 	chatMessageRaw := entity.ChatMessageRaw{
 		Id:            uuid.New(),
-		Chat:          req.Chat,
+		Chat:          strBuilder.String(),
 		Role:          constant.ChatMessageRoleUser,
 		ChatSessionId: req.ChatSessionId,
 		CreatedAt:     now,
 	}
 
+	existingRawChats = append(existingRawChats, &chatMessageRaw)
+
+	geminiReq := make([]*chatbot.ChatHistory, 0)
+	for _, existingRawChat := range existingRawChats {
+		geminiReq = append(geminiReq, &chatbot.ChatHistory{
+			Chat: existingRawChat.Chat,
+			Role: existingRawChat.Role,
+		})
+	}
+
+	reply, err := chatbot.GetGeminiResponse(
+		ctx,
+		os.Getenv("GEMINI_API_KEY"),
+		geminiReq,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	chatMessageModel := entity.ChatMessage{
 		Id:            uuid.New(),
-		Chat:          "This is automated dummy response",
+		Chat:          reply,
 		Role:          constant.ChatMessageRoleModel,
 		ChatSessionId: req.ChatSessionId,
 		CreatedAt:     now.Add(1 * time.Millisecond),
@@ -77,7 +202,7 @@ func (c *chatbotService) SendChat(ctx context.Context, req *dto.SendChatRequest)
 
 	chatMessageRawModel := entity.ChatMessageRaw{
 		Id:            uuid.New(),
-		Chat:          "This is automated dummy response",
+		Chat:          reply,
 		Role:          constant.ChatMessageRoleModel,
 		ChatSessionId: req.ChatSessionId,
 		CreatedAt:     now.Add(1 * time.Millisecond),
@@ -240,11 +365,13 @@ func NewChatbotService(
 	chatSessionRepo repository.IChatSessionRepository,
 	chatMessageRepo repository.IChatMessageRepository,
 	chatMessageRawRepo repository.IChatMessageRawRepository,
+	noteEmbeddingRepo repoNote.INoteEmbeddingRepository,
 ) IChatbotService {
 	return &chatbotService{
 		db:                 db,
 		chatSessionRepo:    chatSessionRepo,
 		chatMessageRepo:    chatMessageRepo,
 		chatMessageRawRepo: chatMessageRawRepo,
+		noteEmbeddingRepo:  noteEmbeddingRepo,
 	}
 }

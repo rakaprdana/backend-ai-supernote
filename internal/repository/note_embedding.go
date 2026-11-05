@@ -17,10 +17,41 @@ type INoteEmbeddingRepository interface {
 	DeleteByNoteId(ctx context.Context, noteId uuid.UUID) error
 	SemanticSearch(ctx context.Context, embeddingValues []float32) ([]*entity.NoteEmbedding, error)
 	DeleteByNotebookId(ctx context.Context, notebookId uuid.UUID) error
+	SearchSimilarity(ctx context.Context, embeddingValues []float32) ([]*entity.NoteEmbedding, error)
 }
 
 type noteEmbeddingRepository struct {
 	db database.DatabaseQueryer
+}
+
+// SearchSimilarity implements [INoteEmbeddingRepository].
+func (n *noteEmbeddingRepository) SearchSimilarity(ctx context.Context, embeddingValues []float32) ([]*entity.NoteEmbedding, error) {
+	rows, err := n.db.Query(
+		ctx,
+		`SELECT id, document FROM note_embedding 
+		WHERE is_deleted=false 
+		ORDER BY 1 - (embedding_value <=> $1) DESC LIMIT 5`,
+		pgvector.NewVector(embeddingValues),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	res := make([]*entity.NoteEmbedding, 0)
+	for rows.Next() {
+		var noteEmbedding entity.NoteEmbedding
+		err = rows.Scan(
+			&noteEmbedding.Id,
+			&noteEmbedding.Document,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		res = append(res, &noteEmbedding)
+	}
+
+	return res, nil
 }
 
 // DeleteByNotebookId implements [INoteEmbeddingRepository].

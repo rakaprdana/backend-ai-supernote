@@ -15,10 +15,31 @@ type IChatbotController interface {
 	GetAllSessions(ctx fiber.Ctx) error
 	GetChatHistory(ctx fiber.Ctx) error
 	SendChat(ctx fiber.Ctx) error
+	DeleteSession(ctx fiber.Ctx) error
 }
 
 type chatbotController struct {
 	chatbotService service.IChatbotService
+}
+
+// DeleteSession implements [IChatbotController].
+func (c *chatbotController) DeleteSession(ctx fiber.Ctx) error {
+	var req dto.DeleteSessionRequest
+
+	if err := ctx.Bind().Body(&req); err != nil {
+		return err
+	}
+
+	if err := serverutils.ValidateRequest(req); err != nil {
+		return err
+	}
+
+	err := c.chatbotService.DeleteSession(ctx.Context(), &req)
+	if err != nil {
+		return err
+	}
+
+	return ctx.JSON(serverutils.SuccessResponse[any]("Success delete session", nil))
 }
 
 // SendChat implements [IChatbotController].
@@ -82,6 +103,7 @@ func (c *chatbotController) RegisterRoutes(r fiber.Router) {
 	h.Get("sessions", c.GetAllSessions)
 	h.Get("chat-history", c.GetChatHistory)
 	h.Post("send-chat", c.SendChat)
+	h.Delete("delete-session", c.DeleteSession)
 
 }
 

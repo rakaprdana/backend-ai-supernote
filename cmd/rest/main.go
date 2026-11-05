@@ -74,6 +74,7 @@ func Main() {
 		chatSessionRepository,
 		chatMessageRepository,
 		chatMessagRawRepository,
+		noteEmbeddingRepository,
 	)
 
 	notebookController := controller.NewNotebookController(notebookService)
